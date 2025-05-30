@@ -1,55 +1,35 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: node-app
+  name: tech-challenge-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: node-app
+      app: tech-challenge-app
   template:
     metadata:
       labels:
-        app: node-app
+        app: tech-challenge-app
     spec:
       containers:
-        - name: tech-challenge-fiap
-          image: andredegaspari/tech-challenge-fiap:beta-v8
-          ports:
-          - containerPort: 3000
-          env:
-            - name: MONGO_URI
-              valueFrom:
-                secretKeyRef:
-                  name: tech-challenge-secrets
-                  key: MONGO_URI
-            - name: PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: tech-challenge-config
-                  key: PORT
-          resources:
-            limits:
-              cpu: "1"
-              memory: "1Gi"
-            requests:
-              cpu: "1"
-              memory: "0.5Gi"
+      - name: tech-challenge-app
+        image: 407549602436.dkr.ecr.us-east-1.amazonaws.com/tech-challenge-app-k8s:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - secretRef:
+            name: tech-challenge-app-secret
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: node-app
-  labels:
-    app: node-app
+  name: tech-challenge-app
 spec:
   type: LoadBalancer
   selector:
-    app: node-app
+    app: tech-challenge-app
   ports:
-    - name: node-app
-      port: 3000
-      targetPort: 3000
-    - name: node-app-debugger
-      port: 3102
-      targetPort: 9229
+  - port: 80
+    targetPort: 3000
