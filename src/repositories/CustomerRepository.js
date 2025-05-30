@@ -1,54 +1,64 @@
-import { ddb, CUSTOMERS_TABLE } from "../config/db";
-import {
-  PutCommand,
-  ScanCommand,
-  GetCommand,
-  DeleteCommand,
-  UpdateCommand
-} from "@aws-sdk/lib-dynamodb";
-import { Customer } from "../domain/entities/Customer";
+// src/repositories/CustomerRepository.js
+import { dynamoDb, TABLE_CUSTOMERS } from "../config/db.js";
+import { v4 as uuid } from "uuid";
 
 export default class CustomerRepository {
-  async create(c: Customer): Promise<Customer> {
-    await ddb.send(new PutCommand({ TableName: CUSTOMERS_TABLE, Item: c }));
-    return c;
+  async create({ cpf, name, email }) {
+    const item = { id: uuid(), cpf, name, email, createdAt: Date.now() };
+    await dynamoDb.put({ TableName: TABLE_CUSTOMERS, Item: item }).promise();
+    return item;
   }
 
-  async findAll(): Promise<Customer[]> {
-    const { Items } = await ddb.send(new ScanCommand({ TableName: CUSTOMERS_TABLE }));
-    return (Items as Customer[]) || [];
+  async getAll() {
+    const { Items } = await dynamoDb.scan({ TableName: TABLE_CUSTOMERS }).promise();
+    return Items;
   }
 
-  async findById(id: string): Promise<Customer | null> {
-    const { Item } = await ddb.send(
-      new GetCommand({ TableName: CUSTOMERS_TABLE, Key: { id } })
-    );
-    return (Item as Customer) || null;
+  async getById(id) {
+    const { Item } = await dynamoDb
+      .get({ TableName: TABLE_CUSTOMERS, Key: { id } })
+      .promise();
+    return Item;
   }
 
-  async update(id: string, attrs: Partial<Customer>): Promise<void> {
-    const keys = Object.keys(attrs);
-    const UpdateExpression = keys.map((_, i) => `#k${i}= :v${i}`).join(", ");
-    const ExpressionAttributeNames = keys.reduce(
-      (a, k, i) => ({ ...a, [`#k${i}`]: k }),
-      {}
-    );
-    const ExpressionAttributeValues = keys.reduce(
-      (a, k, i) => ({ ...a, [`:v${i}`]: (attrs as any)[k] }),
-      {}
-    );
-    await ddb.send(
-      new UpdateCommand({
-        TableName: CUSTOMERS_TABLE,
-        Key: { id },
-        UpdateExpression: `SET ${UpdateExpression}`,
-        ExpressionAttributeNames,
-        ExpressionAttributeValues
-      })
-    );
+  async getByCPF(cpf) {
+    const { Items } = await dynamoDb.query({
+      TableName: TABLE_CUSTOMERS,
+      IndexName: "cpf-index",
+      KeyConditionExpression: "cpf = :cpf",
+      ExpressionAttributeValues: { ":cpf": cpf },
+    }).promise();
+    return Items[0];
   }
 
-  async delete(id: string): Promise<void> {
-    await ddb.send(new DeleteCommand({ TableName: CUSTOMERS_TABLE, Key: { id } }));
+  async getByEmail(email) {
+    const { Items } = await dynamoDb.query({
+      TableName: TABLE_CUSTOMERS,
+      IndexName: "email-index",
+      KeyConditionExpression: "email = :email",
+      ExpressionAttributeValues: { ":email": email },
+    }).promise();
+    return Items[0];
+  }
+
+  async update(id, attrs) {
+    const names  = Object.keys(attrs).reduce((acc,k)=>({...acc, [`#${k}`]: k}), {});
+    const values = Object.entries(attrs).reduce((acc,[k,v])=>({...acc, [`:${k}`]: v}), {});
+    const setExp = Object.keys(attrs).map(k=>`#${k}= :${k}`).join(", ");
+
+    const { Attributes } = await dynamoDb.update({
+      TableName: TABLE_CUSTOMERS,
+      Key: { id },
+      UpdateExpression: `SET ${setExp}`,
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: values,
+      ReturnValues: "ALL_NEW"
+    }).promise();
+
+    return Attributes;
+  }
+
+  async delete(id) {
+    await dynamoDb.delete({ TableName: TABLE_CUSTOMERS, Key: { id } }).promise();
   }
 }

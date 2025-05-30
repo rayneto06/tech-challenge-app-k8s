@@ -1,85 +1,45 @@
-import express, { Request, Response } from 'express';
-import { CustomerController } from '../controllers/customer/customerController';
-import CustomerRepository from '../repositories/CustomerRepository';
+// src/api/customerRoutes.js
+import express from "express";
+import CustomerRepository from "../repositories/CustomerRepository.js";
+import CreateCustomer   from "../domain/useCases/Customers/CreateCustomer.js";
+import ViewCustomer     from "../domain/useCases/Customers/ViewCustomer.js";
 
 const router = express.Router();
-const customerRepository = new CustomerRepository();
-const customerController = new CustomerController(customerRepository);
+const repo   = new CustomerRepository();
 
-// Create Customer
-router.post('/', async (req: Request, res: Response) => {
-    try {
-        const { cpf, email, name } = req.body;
-        const customer = await customerController.createCustomer({ cpf, email, name });
-        res.status(201).json(customer);
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
+router.post("/customers", async (req, res, next) => {
+  try {
+    const customer = await new CreateCustomer(repo).execute(req.body);
+    res.status(201).json(customer);
+  } catch (err) { next(err); }
 });
 
-// List All Customers
-router.get('/', async (req: Request, res: Response) => {
-    try {
-        const customers = await customerController.listAllCustomers();
-        res.json(customers);
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
+router.get("/customers", async (req, res, next) => {
+  try {
+    const list = await new ViewCustomer(repo).execute();
+    res.json(list);
+  } catch (err) { next(err); }
 });
 
-// Get Customer by ID
-router.get('/:id', async (req: Request, res: Response) => {
-    try {
-        const id = req.params.id;
-        const customer = await customerController.findCustomerById({ id });
-        res.json(customer);
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
+router.get("/customers/:id", async (req, res, next) => {
+  try {
+    const cust = await repo.getById(req.params.id);
+    res.json(cust);
+  } catch (err) { next(err); }
 });
 
-// Get Customer by CPF
-router.get('/cpf/:cpf', async (req: Request, res: Response) => {
-    try {
-        const cpf = req.params.cpf;
-        const customer = await customerController.findCustomerByCPF({ cpf });
-        res.json(customer);
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
+router.get("/customers/cpf/:cpf", async (req, res, next) => {
+  try {
+    const cust = await repo.getByCPF(req.params.cpf);
+    res.json(cust);
+  } catch (err) { next(err); }
 });
 
-// Get Customer by Email
-router.get('/email/:email', async (req: Request, res: Response) => {
-    try {
-        const email = req.params.email;
-        const customer = await customerController.findCustomerByEmail({ email });
-        res.json(customer);
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
-});
-
-// Update Customer
-router.put('/:id', async (req: Request, res: Response) => {
-    try {
-        const id = req.params.id;
-        const updatedCustomer = await customerController.updateCustomer({ id, customerData: req.body });
-        res.json(updatedCustomer);
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
-});
-
-// Delete Customer
-router.delete('/:id', async (req: Request, res: Response) => {
-    try {
-        const id = req.params.id;
-        await customerController.deleteCustomer({ id });
-        res.status(204).send();
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
+router.get("/customers/email/:email", async (req, res, next) => {
+  try {
+    const cust = await repo.getByEmail(req.params.email);
+    res.json(cust);
+  } catch (err) { next(err); }
 });
 
 export default router;

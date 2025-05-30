@@ -1,11 +1,17 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+// src/config/db.js
+import AWS from "aws-sdk";
 import dotenv from "dotenv";
 dotenv.config();
 
-const client = new DynamoDBClient({ region: process.env.AWS_REGION });
-export const ddb = DynamoDBDocumentClient.from(client);
+// configure AWS SDK from your .env
+AWS.config.update({
+  region: process.env.AWS_REGION || "us-east-1",
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+});
 
-export const CUSTOMERS_TABLE = process.env.CUSTOMERS_TABLE!;
-export const PRODUCTS_TABLE  = process.env.PRODUCTS_TABLE!;
-export const ORDERS_TABLE    = process.env.ORDERS_TABLE!;
+export const dynamoDb = new AWS.DynamoDB.DocumentClient();
+
+export const TABLE_CUSTOMERS = process.env.CUSTOMERS_TABLE || "Customers";
+export const TABLE_PRODUCTS  = process.env.PRODUCTS_TABLE  || "Products";
+export const TABLE_ORDERS    = process.env.ORDERS_TABLE    || "Orders";

@@ -1,37 +1,26 @@
-import dotenv from 'dotenv';
+// src/app.js
+import express from "express";
+import dotenv from "dotenv";
+
+import customerRoutes  from "./api/customerRoutes.js";
+import productRoutes   from "./api/productRoutes.js";
+import orderRoutes     from "./api/orderRoutes.js";
+import mercadoRoutes   from "./api/mercadoPagoRoutes.js";
+
 dotenv.config();
-
-import express from 'express';
-import bodyParser from 'body-parser';
-
-import { connectDB } from './config/mongo';
-import swaggerUi from "swagger-ui-express";
-import swaggerOutput from "./config/swagger_output.json"
-
-import customerRoutes from './api/customerRoutes';
-import productRoutes from './api/productRoutes';
-import orderRoutes from './api/orderRoutes';
-import mercadoPagoRoutes from './api/mercadoPagoRoutes';
-
 const app = express();
-const port = 3000;
-
-app.use(bodyParser.json());
 app.use(express.json());
 
-connectDB();
+// Mount all
+app.use("/api", customerRoutes);
+app.use("/api", productRoutes);
+app.use("/api", orderRoutes);
+app.use("/api", mercadoRoutes);
 
-app.get('/', (_req: any, res: any) => {
-    res.send('Heartbeat OK 💥');
+// Generic error handler
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: err.message });
 });
 
-app.use('/api/customers', customerRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/mercadoPago', mercadoPagoRoutes);
-
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerOutput));
-
-app.listen(port, () => {
-    console.log(`Tech Challenge running at http://localhost:${port} 🚀`);
-});
+export default app;
