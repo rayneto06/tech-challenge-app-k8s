@@ -23,16 +23,21 @@ jobs:
         with:
           node-version: '18.x'
 
-      - name: Install dependencies & build
-        run: |
-          npm ci
-          npm run build
+      - name: Install dependencies
+        run: npm ci
         env:
+          # Inject your DynamoDB table names & other runtime secrets
           CUSTOMERS_TABLE: ${{ secrets.CUSTOMERS_TABLE }}
-          PRODUCTS_TABLE: ${{ secrets.PRODUCTS_TABLE }}
-          ORDERS_TABLE:   ${{ secrets.ORDERS_TABLE }}
-          AWS_REGION:     ${{ secrets.AWS_REGION }}
-          JWT_SECRET:     ${{ secrets.JWT_SECRET }}
+          PRODUCTS_TABLE:  ${{ secrets.PRODUCTS_TABLE }}
+          ORDERS_TABLE:    ${{ secrets.ORDERS_TABLE }}
+          AWS_REGION:      ${{ secrets.AWS_REGION }}
+          JWT_SECRET:      ${{ secrets.JWT_SECRET }}
+
+      - name: Run any built-in smoke check
+        run: |
+          # (Optional) If you have a smoke-test or a simple "npm test", put it here.
+          # If you do not have tests, you can omit this step entirely.
+          echo "✔️ Dependencies installed successfully."
 
   build-and-push-ecr:
     name: Build & Push Docker Image to ECR
@@ -52,28 +57,28 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}   # omit if you do not have a session token
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}  # omit if not using session tokens
+          aws-region:           ${{ secrets.AWS_REGION }}
 
       - name: Create ECR repo if not exists
         run: |
-          aws ecr describe-repositories --repository-name $ECR_REPOSITORY \
-            || aws ecr create-repository --repository-name $ECR_REPOSITORY
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" \
+            || aws ecr create-repository --repository-name "$ECR_REPOSITORY" --region "$AWS_REGION"
 
       - name: Log in to ECR
         run: |
-          aws ecr get-login-password --region $AWS_REGION \
+          aws ecr get-login-password --region "$AWS_REGION" \
             | docker login --username AWS --password-stdin "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com"
 
       - name: Build Docker image
         run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" .
 
       - name: Tag for ECR
         run: |
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG \
+          docker tag "$ECR_REPOSITORY:$IMAGE_TAG" \
             "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
 
       - name: Push to ECR
