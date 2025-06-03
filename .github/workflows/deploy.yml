@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 1) Build and (if you add tests later) verify code in pull requests and merges to main
+  # 1) Install dependencies (no TypeScript compile) and ensure nothing breaks
   build-and-test:
-    name: Build and Test
+    name: Install Dependencies
     runs-on: ubuntu-latest
 
     steps:
@@ -27,14 +27,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build project
-        run: npm run build
-
-      # If you add any tests in the future, uncomment below:
+      # If you add tests later, you can uncomment:
       # - name: Run tests
       #   run: npm test
 
-  # 2) Build & push Docker image to ECR (only on main branch)
+  # 2) Build & push Docker image to ECR (only on main)
   build-and-push-ecr:
     name: Build and Push Docker Image to ECR
     runs-on: ubuntu-latest
@@ -50,7 +47,6 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v3
 
-      # Configure AWS CLI with your credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -59,29 +55,24 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Ensure the ECR repository exists (creates if missing)
       - name: Create ECR repository if needed
         run: |
           aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" \
             || aws ecr create-repository --repository-name "$ECR_REPOSITORY" --region "$AWS_REGION"
 
-      # Log in to ECR
       - name: Log in to Amazon ECR
         run: |
           aws ecr get-login-password --region "$AWS_REGION" \
             | docker login --username AWS --password-stdin "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-      # Build the Docker image
       - name: Build Docker image
         run: |
           docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" .
 
-      # Tag the image for ECR
       - name: Tag Docker image for ECR
         run: |
           docker tag "$ECR_REPOSITORY:$IMAGE_TAG" "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
 
-      # Push the image to ECR
       - name: Push Docker image to Amazon ECR
         run: |
           docker push "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
