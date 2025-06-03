@@ -1,43 +1,87 @@
-name: Build & Deploy to EKS
+name: Build and Docker Image Deploy to AWS
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
-    branches: [ main ]
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
-  build-deploy:
+  # 1) Build and (if you add tests later) verify code in pull requests and merges to main
+  build-and-test:
+    name: Build and Test
     runs-on: ubuntu-latest
-    env:
-      AWS_REGION: us-east-1
-      ECR_REPO: tc-app
-      IMAGE_TAG: ${{ github.sha }}
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Check out code
+        uses: actions/checkout@v3
 
+      - name: Use Node.js 18.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18.x"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      # If you add any tests in the future, uncomment below:
+      # - name: Run tests
+      #   run: npm test
+
+  # 2) Build & push Docker image to ECR (only on main branch)
+  build-and-push-ecr:
+    name: Build and Push Docker Image to ECR
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+
+    env:
+      ECR_REPOSITORY: tech-challenge-app-k8s
+      AWS_REGION: us-east-1
+      IMAGE_TAG: latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      # Configure AWS CLI with your credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/LabRole
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to ECR
+      # Ensure the ECR repository exists (creates if missing)
+      - name: Create ECR repository if needed
         run: |
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
-            | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" \
+            || aws ecr create-repository --repository-name "$ECR_REPOSITORY" --region "$AWS_REGION"
 
-      - name: Build & push Docker image
+      # Log in to ECR
+      - name: Log in to Amazon ECR
         run: |
-          IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
-          docker build -t $IMAGE_URI .
-          docker push $IMAGE_URI
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-      - name: Update kubeconfig
+      # Build the Docker image
+      - name: Build Docker image
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name tc-k8s-cluster
+          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" .
 
-      - name: Deploy manifests
+      # Tag the image for ECR
+      - name: Tag Docker image for ECR
         run: |
-          kubectl apply -f manifests/
+          docker tag "$ECR_REPOSITORY:$IMAGE_TAG" "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      # Push the image to ECR
+      - name: Push Docker image to Amazon ECR
+        run: |
+          docker push "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
