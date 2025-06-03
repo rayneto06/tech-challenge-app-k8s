@@ -1,4 +1,4 @@
-name: Build and Docker Image Deploy to AWS
+name: Build, Test, and Push Docker Image
 
 on:
   pull_request:
@@ -10,9 +10,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 1) Install dependencies (no TypeScript compile) and ensure nothing breaks
   build-and-test:
-    name: Install Dependencies
+    name: Build & Test Node + Inject DynamoDB Vars
     runs-on: ubuntu-latest
 
     steps:
@@ -22,26 +21,29 @@ jobs:
       - name: Use Node.js 18.x
         uses: actions/setup-node@v3
         with:
-          node-version: "18.x"
+          node-version: '18.x'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install dependencies & build
+        run: |
+          npm ci
+          npm run build
+        env:
+          CUSTOMERS_TABLE: ${{ secrets.CUSTOMERS_TABLE }}
+          PRODUCTS_TABLE: ${{ secrets.PRODUCTS_TABLE }}
+          ORDERS_TABLE:   ${{ secrets.ORDERS_TABLE }}
+          AWS_REGION:     ${{ secrets.AWS_REGION }}
+          JWT_SECRET:     ${{ secrets.JWT_SECRET }}
 
-      # If you add tests later, you can uncomment:
-      # - name: Run tests
-      #   run: npm test
-
-  # 2) Build & push Docker image to ECR (only on main)
   build-and-push-ecr:
-    name: Build and Push Docker Image to ECR
+    name: Build & Push Docker Image to ECR
     runs-on: ubuntu-latest
     needs: build-and-test
     if: github.ref == 'refs/heads/main'
 
     env:
       ECR_REPOSITORY: tech-challenge-app-k8s
-      AWS_REGION: us-east-1
-      IMAGE_TAG: latest
+      AWS_REGION:     ${{ secrets.AWS_REGION }}
+      IMAGE_TAG:      latest
 
     steps:
       - name: Check out code
@@ -52,27 +54,28 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}   # omit if you do not have a session token
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Create ECR repository if needed
+      - name: Create ECR repo if not exists
         run: |
-          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" \
-            || aws ecr create-repository --repository-name "$ECR_REPOSITORY" --region "$AWS_REGION"
+          aws ecr describe-repositories --repository-name $ECR_REPOSITORY \
+            || aws ecr create-repository --repository-name $ECR_REPOSITORY
 
-      - name: Log in to Amazon ECR
+      - name: Log in to ECR
         run: |
-          aws ecr get-login-password --region "$AWS_REGION" \
-            | docker login --username AWS --password-stdin "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com"
 
       - name: Build Docker image
         run: |
-          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" .
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
 
-      - name: Tag Docker image for ECR
+      - name: Tag for ECR
         run: |
-          docker tag "$ECR_REPOSITORY:$IMAGE_TAG" "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG \
+            "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
 
-      - name: Push Docker image to Amazon ECR
+      - name: Push to ECR
         run: |
-          docker push "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"

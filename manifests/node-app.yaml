@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: tech-challenge-app
+  labels:
+    app: tech-challenge-app
 spec:
   replicas: 1
   selector:
@@ -13,23 +15,31 @@ spec:
         app: tech-challenge-app
     spec:
       containers:
-      - name: tech-challenge-app
-        image: 407549602436.dkr.ecr.us-east-1.amazonaws.com/tech-challenge-app-k8s:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 3000
-        envFrom:
-        - secretRef:
-            name: tech-challenge-app-secret
+        - name: tech-challenge-app
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/tech-challenge-app-k8s:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: "production"
+            # - name: CUSTOMERS_TABLE
+            #   value: "Customers"
+            # - name: PRODUCTS_TABLE
+            #   value: "Products"
+            # - name: ORDERS_TABLE
+            #   value: "Orders"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: tech-challenge-app
+  name: node-app
+  labels:
+    app: tech-challenge-app
 spec:
   type: LoadBalancer
   selector:
     app: tech-challenge-app
   ports:
-  - port: 80
-    targetPort: 3000
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000

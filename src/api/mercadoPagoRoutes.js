@@ -1,18 +1,30 @@
-import express from 'express';
-
-import OrderRepository from '../repositories/OrderRepository';
-import HandleExternalPaymentWebhook from '../domain/useCases/Payment/handleExternalPaymentWebhook';
-import ExternalPaymentWebhookController from '../controllers/order/externalPayment/webhook';
-import MercadoPagoRepository from '../repositories/MercadoPagoRepository';
+// src/api/mercadoPagoRoutes.js
+const express = require('express');
+const MercadoPagoRepository = require('../repositories/MercadoPagoRepository');
+const HandleExternalPaymentWebhook = require('../domain/useCases/Payment/handleExternalPaymentWebhook');
 
 const router = express.Router();
+const repo = new MercadoPagoRepository();
 
-const orderRepository = new OrderRepository();
-const mercadoPagoRepository = new MercadoPagoRepository();
+router.post('/createPreference', async (req, res) => {
+  try {
+    const { orderId, total } = req.body;
+    const useCase = require('../domain/useCases/Payment/CreatePreference'); // if you have one
+    const pref = await useCase.execute({ orderId, total, repo });
+    res.json(pref);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
-const handleMercadoPagoWebhook = new HandleExternalPaymentWebhook(orderRepository, mercadoPagoRepository);
-const externalPaymentWebhookController = new ExternalPaymentWebhookController(handleMercadoPagoWebhook);
+router.post('/webhook', async (req, res) => {
+  try {
+    const useCase = new HandleExternalPaymentWebhook(repo);
+    const result = await useCase.execute({ body: req.body });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
-router.post('/mercadopago', (req, res) => externalPaymentWebhookController.handle(req, res));
-
-export default router;
+module.exports = router;

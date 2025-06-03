@@ -1,48 +1,100 @@
-import { ddb, ORDERS_TABLE } from "../config/db";
-import {
-  PutCommand,
-  ScanCommand,
-  GetCommand,
-  DeleteCommand,
-  UpdateCommand
-} from "@aws-sdk/lib-dynamodb";
-import { Order } from "../domain/entities/Order";
+// src/repositories/OrderRepository.js
+const { dynamoDb } = require('../config/db');
+const { v4: uuidv4 } = require('uuid');
 
-export default class OrderRepository {
-  async create(o: Order): Promise<Order> {
-    await ddb.send(new PutCommand({ TableName: ORDERS_TABLE, Item: o }));
-    return o;
+class OrderRepository {
+  constructor() {
+    this.tableName = process.env.ORDERS_TABLE;
   }
 
-  async findAll(): Promise<Order[]> {
-    const { Items } = await ddb.send(new ScanCommand({ TableName: ORDERS_TABLE }));
-    return (Items as Order[]) || [];
+  async createOrder({ customerId, combo, total }) {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const item = {
+      id,
+      customerId,
+      combo,
+      total,
+      status: 'Recebido',
+      paymentStatus: 'Pendente',
+      createdAt: now,
+      updatedAt: now
+    };
+
+    const params = {
+      TableName: this.tableName,
+      Item: item
+    };
+    await dynamoDb.put(params).promise();
+    return item;
   }
 
-  async findById(id: string): Promise<Order | null> {
-    const { Item } = await ddb.send(
-      new GetCommand({ TableName: ORDERS_TABLE, Key: { id } })
-    );
-    return (Item as Order) || null;
+  async getAllOrders() {
+    const params = { TableName: this.tableName };
+    const result = await dynamoDb.scan(params).promise();
+    return result.Items || [];
   }
 
-  async update(id: string, attrs: Partial<Order>): Promise<void> {
-    const keys = Object.keys(attrs);
-    const upd = keys.map((_, i) => `#k${i}= :v${i}`).join(", ");
-    const names = keys.reduce((a, k, i) => ({ ...a, [`#k${i}`]: k }), {});
-    const vals  = keys.reduce((a, k, i) => ({ ...a, [`:v${i}`]: (attrs as any)[k] }), {});
-    await ddb.send(
-      new UpdateCommand({
-        TableName: ORDERS_TABLE,
-        Key: { id },
-        UpdateExpression: `SET ${upd}`,
-        ExpressionAttributeNames: names,
-        ExpressionAttributeValues: vals
-      })
-    );
+  async getAllActiveOrders() {
+    // Filter out status == 'Finalizado'
+    const params = {
+      TableName: this.tableName,
+      FilterExpression: 'status <> :finalizado',
+      ExpressionAttributeValues: {
+        ':finalizado': 'Finalizado'
+      }
+    };
+    const result = await dynamoDb.scan(params).promise();
+    return result.Items || [];
   }
 
-  async delete(id: string): Promise<void> {
-    await ddb.send(new DeleteCommand({ TableName: ORDERS_TABLE, Key: { id } }));
+  async getOrderById(id) {
+    const params = {
+      TableName: this.tableName,
+      Key: { id }
+    };
+    const result = await dynamoDb.get(params).promise();
+    return result.Item || null;
+  }
+
+  async getOrderStatusById(id) {
+    const order = await this.getOrderById(id);
+    if (!order) return null;
+    return { id: order.id, status: order.status, paymentStatus: order.paymentStatus };
+  }
+
+  async updateOrderStatus(id, newStatus) {
+    const now = new Date().toISOString();
+    const params = {
+      TableName: this.tableName,
+      Key: { id },
+      UpdateExpression: 'SET #s = :status, updatedAt = :updatedAt',
+      ExpressionAttributeNames: { '#s': 'status' },
+      ExpressionAttributeValues: {
+        ':status': newStatus,
+        ':updatedAt': now
+      },
+      ReturnValues: 'ALL_NEW'
+    };
+    const result = await dynamoDb.update(params).promise();
+    return result.Attributes || null;
+  }
+
+  async updatePaymentStatus(id, paymentStatus) {
+    const now = new Date().toISOString();
+    const params = {
+      TableName: this.tableName,
+      Key: { id },
+      UpdateExpression: 'SET paymentStatus = :paymentStatus, updatedAt = :updatedAt',
+      ExpressionAttributeValues: {
+        ':paymentStatus': paymentStatus,
+        ':updatedAt': now
+      },
+      ReturnValues: 'ALL_NEW'
+    };
+    const result = await dynamoDb.update(params).promise();
+    return result.Attributes || null;
   }
 }
+
+module.exports = OrderRepository;

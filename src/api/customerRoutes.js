@@ -1,45 +1,47 @@
 // src/api/customerRoutes.js
-import express from "express";
-import CustomerRepository from "../repositories/CustomerRepository.js";
-import CreateCustomer   from "../domain/useCases/Customers/CreateCustomer.js";
-import ViewCustomer     from "../domain/useCases/Customers/ViewCustomer.js";
+const express = require('express');
+const CustomerRepository = require('../repositories/CustomerRepository');
+const CreateCustomer = require('../domain/useCases/Customers/CreateCustomer');
+const ViewCustomer = require('../domain/useCases/Customers/ViewCustomer');
 
 const router = express.Router();
-const repo   = new CustomerRepository();
+const repo = new CustomerRepository();
 
-router.post("/customers", async (req, res, next) => {
+// Create Customer
+router.post('/', async (req, res) => {
   try {
-    const customer = await new CreateCustomer(repo).execute(req.body);
+    const { name, email, cpf } = req.body;
+    const useCase = new CreateCustomer(repo);
+    const customer = await useCase.execute({ name, email, cpf });
     res.status(201).json(customer);
-  } catch (err) { next(err); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.get("/customers", async (req, res, next) => {
+// Get All Customers
+router.get('/', async (_req, res) => {
   try {
-    const list = await new ViewCustomer(repo).execute();
-    res.json(list);
-  } catch (err) { next(err); }
+    const useCase = new ViewCustomer(repo);
+    const customers = await useCase.execute();
+    res.json(customers);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.get("/customers/:id", async (req, res, next) => {
+// Get Customer by ID
+router.get('/:id', async (req, res) => {
   try {
-    const cust = await repo.getById(req.params.id);
-    res.json(cust);
-  } catch (err) { next(err); }
+    const useCase = new ViewCustomer(repo);
+    const customer = await useCase.execute({ id: req.params.id });
+    if (!customer) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+    res.json(customer);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.get("/customers/cpf/:cpf", async (req, res, next) => {
-  try {
-    const cust = await repo.getByCPF(req.params.cpf);
-    res.json(cust);
-  } catch (err) { next(err); }
-});
-
-router.get("/customers/email/:email", async (req, res, next) => {
-  try {
-    const cust = await repo.getByEmail(req.params.email);
-    res.json(cust);
-  } catch (err) { next(err); }
-});
-
-export default router;
+module.exports = router;

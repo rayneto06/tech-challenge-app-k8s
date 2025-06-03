@@ -1,26 +1,35 @@
 // src/app.js
-import express from "express";
-import dotenv from "dotenv";
+require('dotenv').config();
+const express = require('express');
+const bodyParser = require('body-parser');
+const swaggerUi = require('swagger-ui-express');
+const swaggerDocument = require('./config/swagger_output.json');
 
-import customerRoutes  from "./api/customerRoutes.js";
-import productRoutes   from "./api/productRoutes.js";
-import orderRoutes     from "./api/orderRoutes.js";
-import mercadoRoutes   from "./api/mercadoPagoRoutes.js";
+const customerRoutes = require('./api/customerRoutes');
+const productRoutes = require('./api/productRoutes');
+const orderRoutes = require('./api/orderRoutes');
+const mercadoPagoRoutes = require('./api/mercadoPagoRoutes');
 
-dotenv.config();
 const app = express();
-app.use(express.json());
+app.use(bodyParser.json());
 
-// Mount all
-app.use("/api", customerRoutes);
-app.use("/api", productRoutes);
-app.use("/api", orderRoutes);
-app.use("/api", mercadoRoutes);
+// Swagger UI
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-// Generic error handler
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: err.message });
+// Mount routes
+app.use('/api/customers', customerRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/payments', mercadoPagoRoutes);
+
+// Health check
+app.get('/healthz', (_req, res) => {
+  res.status(200).json({ status: 'OK' });
 });
 
-export default app;
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Tech-Challenge API listening on port ${port}`);
+});
+
+module.exports = app;

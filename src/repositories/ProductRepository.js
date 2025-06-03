@@ -1,48 +1,115 @@
-import { ddb, PRODUCTS_TABLE } from "../config/db";
-import {
-  PutCommand,
-  ScanCommand,
-  GetCommand,
-  DeleteCommand,
-  UpdateCommand
-} from "@aws-sdk/lib-dynamodb";
-import { Product } from "../domain/entities/Product";
+// src/repositories/ProductRepository.js
+const { dynamoDb } = require('../config/db');
+const { v4: uuidv4 } = require('uuid');
 
-export default class ProductRepository {
-  async create(p: Product): Promise<Product> {
-    await ddb.send(new PutCommand({ TableName: PRODUCTS_TABLE, Item: p }));
-    return p;
+class ProductRepository {
+  constructor() {
+    this.tableName = process.env.PRODUCTS_TABLE;
   }
 
-  async findAll(): Promise<Product[]> {
-    const { Items } = await ddb.send(new ScanCommand({ TableName: PRODUCTS_TABLE }));
-    return (Items as Product[]) || [];
+  async createProduct({ name, category, description, price, imageUrl }) {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+
+    const item = { 
+      id,
+      name,
+      category,
+      description,
+      price,
+      imageUrl,
+      createdAt: now,
+      updatedAt: now 
+    };
+
+    const params = {
+      TableName: this.tableName,
+      Item: item
+    };
+
+    await dynamoDb.put(params).promise();
+    return item;
   }
 
-  async findById(id: string): Promise<Product | null> {
-    const { Item } = await ddb.send(
-      new GetCommand({ TableName: PRODUCTS_TABLE, Key: { id } })
-    );
-    return (Item as Product) || null;
+  async getAllProducts() {
+    const params = {
+      TableName: this.tableName
+    };
+    const result = await dynamoDb.scan(params).promise();
+    return result.Items || [];
   }
 
-  async update(id: string, attrs: Partial<Product>): Promise<void> {
-    const keys = Object.keys(attrs);
-    const upd = keys.map((_, i) => `#k${i}= :v${i}`).join(", ");
-    const names = keys.reduce((a, k, i) => ({ ...a, [`#k${i}`]: k }), {});
-    const vals  = keys.reduce((a, k, i) => ({ ...a, [`:v${i}`]: (attrs as any)[k] }), {});
-    await ddb.send(
-      new UpdateCommand({
-        TableName: PRODUCTS_TABLE,
-        Key: { id },
-        UpdateExpression: `SET ${upd}`,
-        ExpressionAttributeNames: names,
-        ExpressionAttributeValues: vals
-      })
-    );
+  async getProductById(id) {
+    const params = {
+      TableName: this.tableName,
+      Key: { id }
+    };
+    const result = await dynamoDb.get(params).promise();
+    return result.Item || null;
   }
 
-  async delete(id: string): Promise<void> {
-    await ddb.send(new DeleteCommand({ TableName: PRODUCTS_TABLE, Key: { id } }));
+  async getProductsByCategory(category) {
+    // Scan with filter on category
+    const params = {
+      TableName: this.tableName,
+      FilterExpression: 'category = :category',
+      ExpressionAttributeValues: {
+        ':category': category
+      }
+    };
+    const result = await dynamoDb.scan(params).promise();
+    return result.Items || [];
+  }
+
+  async updateProduct(id, { name, category, description, price, imageUrl }) {
+    const now = new Date().toISOString();
+    const expressionParts = [];
+    const attributeValues = { ':updatedAt': now };
+
+    if (name !== undefined) {
+      expressionParts.push('name = :name');
+      attributeValues[':name'] = name;
+    }
+    if (category !== undefined) {
+      expressionParts.push('category = :category');
+      attributeValues[':category'] = category;
+    }
+    if (description !== undefined) {
+      expressionParts.push('description = :description');
+      attributeValues[':description'] = description;
+    }
+    if (price !== undefined) {
+      expressionParts.push('price = :price');
+      attributeValues[':price'] = price;
+    }
+    if (imageUrl !== undefined) {
+      expressionParts.push('imageUrl = :imageUrl');
+      attributeValues[':imageUrl'] = imageUrl;
+    }
+
+    expressionParts.push('updatedAt = :updatedAt');
+    const updateExpression = 'SET ' + expressionParts.join(', ');
+
+    const params = {
+      TableName: this.tableName,
+      Key: { id },
+      UpdateExpression: updateExpression,
+      ExpressionAttributeValues: attributeValues,
+      ReturnValues: 'ALL_NEW'
+    };
+
+    const result = await dynamoDb.update(params).promise();
+    return result.Attributes || null;
+  }
+
+  async deleteProduct(id) {
+    const params = {
+      TableName: this.tableName,
+      Key: { id }
+    };
+    await dynamoDb.delete(params).promise();
+    return { id };
   }
 }
+
+module.exports = ProductRepository;

@@ -1,75 +1,91 @@
-// src/api/orderRoutes.ts
-import express, { Request, Response } from 'express';
-import OrderRepository from '../repositories/OrderRepository';
-import IOrderRepository from '../repositories/interfaces/IOrderRepository';
-import CreateOrder from '../domain/useCases/Order/CreateOrder';
-import CheckPaymentStatus from '../domain/useCases/Order/CheckPaymentStatus';
-import HandlePaymentWebhook from '../domain/useCases/Order/HandlePaymentWebhook';
-import ListOrders from '../domain/useCases/Order/ListOrders';
-import UpdateOrderStatus from '../domain/useCases/Order/UpdateOrderStatus';
+// src/api/orderRoutes.js
+const express = require('express');
+const OrderRepository = require('../repositories/OrderRepository');
+const CreateOrder = require('../domain/useCases/Order/CreateOrder');
+const ViewOrder = require('../domain/useCases/Order/ViewOrder');
+const UpdateOrderStatus = require('../domain/useCases/Order/UpdateOrderStatus');
+const CheckPaymentStatus = require('../domain/useCases/Order/CheckPaymentStatus');
+const HandlePaymentWebhook = require('../domain/useCases/Order/HandlePaymentWebhook');
 
 const router = express.Router();
+const repo = new OrderRepository();
 
-const orderRepository = new OrderRepository();
-const createOrder = new CreateOrder(orderRepository as IOrderRepository);
-const checkPaymentStatus = new CheckPaymentStatus(orderRepository as IOrderRepository);
-const handlePaymentWebhook = new HandlePaymentWebhook(orderRepository as IOrderRepository);
-const listOrders = new ListOrders(orderRepository as IOrderRepository);
-const updateOrderStatus = new UpdateOrderStatus(orderRepository as IOrderRepository);
-
-// Endpoint: Checkout Order (Create Order)
-router.post('/checkout', async (req: Request, res: Response) => {
-    try {
-        const orderData = req.body; // should include products, customer, etc.
-        const newOrder = await createOrder.execute(orderData);
-        res.status(201).json({ orderId: newOrder._id });
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
+// List Orders (all active)
+router.get('/', async (_req, res) => {
+  try {
+    const useCase = new ViewOrder(repo);
+    const orders = await useCase.execute({ onlyActive: true });
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-// Endpoint: Consult Payment Status for an Order
-router.get('/:id/payment-status', async (req: Request, res: Response) => {
-    try {
-        const orderId = req.params.id;
-        const paymentStatus = await checkPaymentStatus.execute(orderId);
-        res.json({ paymentStatus });
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
+// Get Order by ID
+router.get('/:id', async (req, res) => {
+  try {
+    const useCase = new ViewOrder(repo);
+    const order = await useCase.execute({ id: req.params.id });
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
     }
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-// Endpoint: Webhook to receive payment confirmation (mock)
-router.post('/webhook', async (req: Request, res: Response) => {
-    try {
-        const payload = req.body; // expected: { orderId: string, paymentStatus: 'aprovado' | 'recusado' }
-        await handlePaymentWebhook.execute(payload);
-        res.status(200).json({ message: 'Webhook processed' });
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
+// Checkout Order
+router.post('/checkout', async (req, res) => {
+  try {
+    const { customerId, combo, total } = req.body;
+    const useCase = new CreateOrder(repo);
+    const order = await useCase.execute({ customerId, combo, total });
+    res.status(201).json(order);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-// Endpoint: List Orders (excluding finalized), sorted by custom criteria
-router.get('/', async (req: Request, res: Response) => {
-    try {
-        const orders = await listOrders.execute();
-        res.json(orders);
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
+// Check Payment Status
+router.get('/:id/payment-status', async (req, res) => {
+  try {
+    const useCase = new CheckPaymentStatus(repo);
+    const statusObj = await useCase.execute({ id: req.params.id });
+    if (!statusObj) {
+      return res.status(404).json({ message: 'Order not found' });
     }
+    res.json(statusObj);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-// Endpoint: Update Order Status (for updating the flow)
-router.put('/:id/status', async (req: Request, res: Response) => {
-    try {
-        const orderId = req.params.id;
-        const { status } = req.body; // new status, e.g., 'emPreparacao', 'pronto', etc.
-        const updatedOrder = await updateOrderStatus.execute(orderId, status);
-        res.json(updatedOrder);
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
+// Update Order Status
+router.put('/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const useCase = new UpdateOrderStatus(repo);
+    const updated = await useCase.execute({ id: req.params.id, status });
+    if (!updated) {
+      return res.status(404).json({ message: 'Order not found' });
     }
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-export default router;
+// Mock Payment Webhook (handled by HandlePaymentWebhook use case)
+router.post('/webhook', async (req, res) => {
+  try {
+    const { orderId, paymentStatus } = req.body;
+    const useCase = new HandlePaymentWebhook(repo);
+    const result = await useCase.execute({ orderId, paymentStatus });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+module.exports = router;
